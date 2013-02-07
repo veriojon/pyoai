@@ -42,15 +42,7 @@ class XMLTreeServer(object):
         if not header.isDeleted():
             self._outputMetadata(e_record, kw['metadataPrefix'], metadata)
         return envelope
-
-    def getMetadata(self, **kw):
-        """unofficial verb, works same as getRecord, but returns
-        the first element below the oai:metadata element"""
-        envelope = self.getRecord(**kw)
-        metadata = envelope.xpath(
-            '//oai:metadata/node()[1]', namespaces={'oai': NS_OAIPMH})
-        return metadata[0]
-        
+    
     def identify(self):
         envelope, e_identify = self._outputEnvelope(verb='Identify')
         identify = self._server.identify()
@@ -150,10 +142,10 @@ class XMLTreeServer(object):
             kw)
         return envelope
 
-    def handleException(self, exception):
+    def handleException(self, exception, kw):
         if isinstance(exception, error.ErrorBase):
             envelope = self._outputErrors(
-                [(exception.oainame(), str(exception))])
+                [(exception.oainame(), str(exception))], **kw)
             return envelope
         # unhandled exception, so raise again
         raise
@@ -250,6 +242,7 @@ class ServerBase(common.ResumptionOAIPMH):
         request_kw is a dictionary containing request parameters, including
         verb.
         """
+
         # try to get verb, if not, we have an argument handling error
         try:
             new_kw = {}
@@ -259,7 +252,9 @@ class ServerBase(common.ResumptionOAIPMH):
             except UnicodeError:
                 raise error.BadVerbError,\
                       "Non-ascii keys in request."
-            request_kw = new_kw
+	    # bad idea to copy a dict this way
+            #request_kw = new_kw
+            request_kw = dict(new_kw)
             try:
                 verb = request_kw.pop('verb')
             except KeyError:
@@ -267,8 +262,7 @@ class ServerBase(common.ResumptionOAIPMH):
                 raise error.BadVerbError,\
                       "Required verb argument not found."
             if verb not in ['GetRecord', 'Identify', 'ListIdentifiers',
-                            'GetMetadata', 'ListMetadataFormats',
-                            'ListRecords', 'ListSets']:
+                            'ListMetadataFormats', 'ListRecords', 'ListSets']:
                 raise error.BadVerbError, "Illegal verb: %s" % verb
             # replace from and until arguments if necessary
             from_ = request_kw.get('from')
@@ -308,7 +302,9 @@ class ServerBase(common.ResumptionOAIPMH):
             return self.handleVerb(verb, request_kw)            
         except:
             # in case of exception, call exception handler
-            return self.handleException(request_kw, sys.exc_info())
+            #return self.handleException(request_kw, sys.exc_info())
+	    # request_kw has had the verb removed, bad idea as need all the kw for error handling
+            return self.handleException(new_kw, sys.exc_info())
         
     def handleVerb(self, verb, kw):
         method = common.getMethodForVerb(self._tree_server, verb)
@@ -320,7 +316,7 @@ class ServerBase(common.ResumptionOAIPMH):
     def handleException(self, kw, exc_info):
         type, value, traceback = exc_info
         return etree.tostring(
-            self._tree_server.handleException(value).getroot(),
+            self._tree_server.handleException(value, kw).getroot(),
             encoding='UTF-8',
             xml_declaration=True,
             pretty_print=True)
